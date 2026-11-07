@@ -165,7 +165,7 @@ function makeCert(r) {
 
 const lk = (i, t, sm, h) => h ? `<a class="lk" href="${h}" target="_blank" rel="noopener"><i>${i}</i><span>${t}<small>${sm}</small></span></a>` : `<div class="lk off"><i>${i}</i><span>${t}<small>${sm}</small></span></div>`;
 const FAQ = [
-  ['What do I need to start?', 'Your company and HR details, plus the employee\'s full name, roll number, branch and year of passing.'],
+  ['What do I need to start?', 'Your company and HR details, plus the student\'s full name, roll number, branch and year of passing.'],
   ['Who approves a request?', 'Only the HOD or the Training & Placement (TNP) office can approve or reject a request through the authorized college portal.'],
   ['How do I get the result?', 'You get a request ID and a tracking code when you submit. Enter both on the Track page, or log in to view all your requests and download verified PDF certificates.']
 ];
@@ -187,14 +187,14 @@ const I = {
 
 function home() {
   return `<section class="hero"><div class="heroimg"></div><div class="eyebrow">Bonam Venkata Chalamayya Engineering College &ndash; Odalarevu</div><h1>Academic Verification <span>Portal</span></h1><p>BVC Engineering College (Autonomous), Odalarevu, East Godavari, Andhra Pradesh, is AICTE approved, NAAC accredited and affiliated to JNTUK. Submit and verify student academic records with Firebase real-time backend synchronization.</p><div class="trust">${[['AICTE', 'Approved', I.award], ['NAAC', 'Accredited', I.cap], ['JNTUK', 'Affiliated', I.bank]].map(x => `<div class="tr"><i>${x[2]}</i><div><b>${x[0]}</b><span>${x[1]}</span></div></div>`).join('')}</div></section>
-  <section class="card sbm"><i class="sico">${I.shield}</i><div class="sbt"><h2>Submit a verification</h2><p class="sub" style="margin:0 0 14px">Submit an employee's details and track the college's decision. Sign in to save your submissions automatically.</p><button class="btn pill" data-go="company">Get Started ${I.arrow}</button></div></section>
+  <section class="card sbm"><i class="sico">${I.shield}</i><div class="sbt"><h2>Submit a verification</h2><p class="sub" style="margin:0 0 14px">Submit a student's details and track the college's decision. Sign in to save your submissions automatically.</p><button class="btn pill" data-go="company">Get Started ${I.arrow}</button></div></section>
   <h2 class="sec">Common questions</h2><div class="svc">${FAQ.map(f => `<div class="card"><h3>${f[0]}</h3><p>${f[1]}</p></div>`).join('')}</div>
   <h2 class="sec">Official BVC links</h2><div class="links">${lk(SI.ig, 'Instagram', 'BVC Engineering College, Odalarevu', 'https://share.google/S3uXgTDYh53UeSGsc')}${lk(SI.web, 'College website', 'bvcec.edu.in', 'https://bvcec.edu.in')}${lk(SI.li, 'LinkedIn', 'bvcec-odalarevu', 'https://www.linkedin.com/school/bvcec-odalarevu/')}${lk(SI.wa, 'WhatsApp channel', 'Latest college updates', 'https://whatsapp.com/channel/0029VbBbf9o5q08lOEu9jl0d')}</div>`;
 }
 
 function about() {
   return `<h1>About BVC</h1><p class="sub">BVC Engineering College (Autonomous)</p><div class="card doc"><p>BVC Engineering College (Autonomous) is at Odalarevu in East Godavari District, Andhra Pradesh. It is AICTE approved, NAAC accredited and affiliated to JNTUK, offering B.Tech, M.Tech and diploma programmes along with Ph.D. research admissions.</p><h2>Address</h2><p>B.V.C Engineering College, Odalarevu &ndash; 533210, Allavaram Mandal, East Godavari District, Andhra Pradesh, India.</p></div>
-  <h2 class="sec">How verification works</h2><div class="steps3"><div class="card"><i>1</i><h3>Enter employee details</h3><p>Provide company HR contacts and employee student roll number.</p></div><div class="card"><i>2</i><h3>Select scope</h3><p>Choose degree, marks, backlogs, or conduct checks.</p></div><div class="card"><i>3</i><h3>Track & Download</h3><p>College officers review in Firestore; download your formal verification certificate.</p></div></div>
+  <h2 class="sec">How verification works</h2><div class="steps3"><div class="card"><i>1</i><h3>Enter student details</h3><p>Provide company HR contacts and student roll number.</p></div><div class="card"><i>2</i><h3>Select scope</h3><p>Choose degree, marks, backlogs, or conduct checks.</p></div><div class="card"><i>3</i><h3>Track & Download</h3><p>College officers review in Firestore; download your formal verification certificate.</p></div></div>
   <h2 class="sec">What can be verified</h2><div class="svc">${TYPES.map(t => `<div class="card"><h3>${t.t}</h3><p>${t.d}</p></div>`).join('')}</div>`;
 }
 
@@ -203,11 +203,11 @@ function contact() {
 }
 
 function terms() {
-  return doc('Terms &amp; Conditions', 'Please read before using BVC Verify', `<h2>1. Purpose</h2><p>This service lets employers confirm the academic records of BVC Engineering College graduates. Requests are for authorised company representatives only.</p><h2>2. Consent</h2><p>By submitting a request you confirm that you have the employee's consent to verify their records with the college.</p><h2>3. Decisions</h2><p>Only the HOD or Training &amp; Placement office can approve or reject a request. Decisions reflect college archives.</p><h2>4. Acceptable use</h2><p>Use the service only for genuine hiring or background employment checks.</p>`);
+  return doc('Terms &amp; Conditions', 'Please read before using BVC Verify', `<h2>1. Purpose</h2><p>This service lets employers confirm the academic records of BVC Engineering College graduates. Requests are for authorised company representatives only.</p><h2>2. Consent</h2><p>By submitting a request you confirm that you have the student's consent to verify their records with the college.</p><h2>3. Decisions</h2><p>Only the HOD or Training &amp; Placement office can approve or reject a request. Decisions reflect college archives.</p><h2>4. Acceptable use</h2><p>Use the service only for genuine hiring or background employment checks.</p>`);
 }
 
 function privacy() {
-  return doc('Privacy Policy', 'How we handle information on BVC Verify', `<h2>What we collect</h2><ul><li>Company details you submit: company name, HR name, work email and phone.</li><li>Employee details: name, roll number, branch and year of passing.</li><li>Firebase Authentication credentials when signed in.</li></ul><h2>Why we use it</h2><p>Only to process verification requests and issue verified certificates.</p><h2>Contact</h2><p>Questions: bvce@bvcgroup.in</p>`);
+  return doc('Privacy Policy', 'How we handle information on BVC Verify', `<h2>What we collect</h2><ul><li>Company details you submit: company name, HR name, work email and phone.</li><li>Student details: name, roll number, branch and year of passing.</li><li>Firebase Authentication credentials when signed in.</li></ul><h2>Why we use it</h2><p>Only to process verification requests and issue verified certificates.</p><h2>Contact</h2><p>Questions: bvce@bvcgroup.in</p>`);
 }
 
 // Authentication Views (Sign In, Sign Up, Forgot Password, Email Verification)
@@ -353,7 +353,7 @@ function reviewerView() {
 function company_form() {
   const steps = ['Details', PAY.on ? 'Verification & payment' : 'Verification', 'Done'];
   const sh = `<div class="steps">${steps.map((s, i) => `<div class="${i + 1 <= step ? 'on' : ''}">${i + 1}. ${s}</div>`).join('')}</div>`;
-  const head = `<div class="row"><div><h1>Verify an employee</h1><p class="sub">Add student credentials and the college will confirm.</p></div><button class="btn o sm" data-go="track">Track a request</button></div>`;
+  const head = `<div class="row"><div><h1>Verify a student</h1><p class="sub">Add student credentials and the college will confirm.</p></div><button class="btn o sm" data-go="track">Track a request</button></div>`;
   const fld = (l, id, extra, err) => `<div><label>${l}</label><input id="${id}" ${extra || ''}><div class="err" id="e-${err || id}"></div></div>`;
 
   if (step === 1) {
@@ -364,7 +364,7 @@ function company_form() {
     ${fld('HR name', 'hrName', `value="${esc(draft.hrName || '')}"`)}
     ${fld('HR work email', 'hr', `type="email" placeholder="hr@yourcompany.com" value="${esc(draft.hr || '')}"`)}
     ${fld('HR phone (optional)', 'phone', `inputmode="tel" placeholder="10-digit mobile number" value="${esc(draft.phone || '')}"`)}
-    ${fld('Employee full name', 'name', `value="${esc(draft.name || '')}"`)}
+    ${fld('Student full name', 'name', `value="${esc(draft.name || '')}"`)}
     ${fld('Roll number', 'roll', `placeholder="e.g. 21221A0572" value="${esc(draft.roll || '')}"`)}
     <div><label>Branch</label><select id="branch">${['CSE', 'CSE (AI & ML)', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT'].map(b => `<option ${draft.branch === b ? 'selected' : ''}>${b}</option>`).join('')}</select></div>
     ${fld('Year of passing', 'year', `inputmode="numeric" maxlength="4" placeholder="e.g. 2025" value="${esc(draft.year || '')}"`)}</div>
@@ -713,7 +713,7 @@ function bind() {
         hrName: !d.hrName && 'Enter the HR name',
         hr: !/^\S+@\S+\.\S+$/.test(d.hr) ? 'Enter a valid email' : '',
         phone: d.phone && !/^[6-9]\d{9}$/.test(d.phone) && 'Enter a valid 10-digit number',
-        name: !d.name && 'Enter the employee name',
+        name: !d.name && 'Enter the student name',
         roll: !/^[0-9]{2}[0-9A-Z]{8}$/.test(d.roll) && 'Roll number format: e.g. 21221A0572',
         year: !/^20\d\d$/.test(d.year) && 'Enter a year like 2025'
       };
