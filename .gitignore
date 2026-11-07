@@ -1,0 +1,16 @@
+# Dependencies & caches
+node_modules/
+.npm
+.agents/
+skills-lock.json
+
+# Firebase temporary files
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+
+# Environment / OS
+.env
+.env.local
+.DS_Store
+Thumbs.db
