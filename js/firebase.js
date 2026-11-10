@@ -40,7 +40,32 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 // Authentication Helpers
-export async function signUpUser(email, password, displayName, companyName) {
+export const isBvcEmail = email => /@bvcgroup\.in$/i.test(email || '');
+
+export const AUTHORITY_EMAILS = {
+  principal: 'principal@bvcgroup.in',
+  placement: 'tpo.bvce@bvcgroup.in',
+  hods: {
+    'CSE': 'hod.cse@bvcgroup.in',
+    'CSE (AI & ML)': 'hod.aiml@bvcgroup.in',
+    'ECE': 'hod.ece@bvcgroup.in',
+    'EEE': 'hod.eee@bvcgroup.in',
+    'MECH': 'hod.mech@bvcgroup.in',
+    'CIVIL': 'hod.civil@bvcgroup.in',
+    'IT': 'hod.it@bvcgroup.in'
+  }
+};
+
+export function getAuthorityRecipients(branch) {
+  const hodEmail = AUTHORITY_EMAILS.hods[branch] || AUTHORITY_EMAILS.hods['CSE'];
+  return [
+    { role: 'HOD (' + branch + ')', email: hodEmail },
+    { role: 'Principal', email: AUTHORITY_EMAILS.principal },
+    { role: 'Placement Cell', email: AUTHORITY_EMAILS.placement }
+  ];
+}
+
+export async function signUpUser(email, password, displayName, companyName, branch) {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
   const user = credential.user;
 
@@ -55,14 +80,25 @@ export async function signUpUser(email, password, displayName, companyName) {
     console.warn("Could not send email verification immediately:", err);
   }
 
+  // Determine role based on email domain
+  const isAuthority = isBvcEmail(email);
+  let role = 'company';
+  if (isAuthority) {
+    const lower = email.toLowerCase();
+    if (lower.includes('principal')) role = 'principal';
+    else if (lower.includes('tpo') || lower.includes('placement')) role = 'placement';
+    else role = 'hod';
+  }
+
   // Create user profile in Firestore
   const userRef = doc(db, "users", user.uid);
   const profileData = {
     uid: user.uid,
     email: user.email,
     displayName: displayName || "",
-    companyName: companyName || "",
-    role: "company",
+    companyName: isAuthority ? "BVC Engineering College" : (companyName || ""),
+    role,
+    branch: branch || "",
     createdAt: serverTimestamp()
   };
   await setDoc(userRef, profileData);
@@ -86,7 +122,27 @@ export async function signInUser(email, password) {
   const user = credential.user;
   const userRef = doc(db, "users", user.uid);
   const snap = await getDoc(userRef);
-  const profile = snap.exists() ? snap.data() : { uid: user.uid, email: user.email, role: 'company' };
+  let profile;
+  const isAuthority = isBvcEmail(user.email);
+  const authorityRole = user.email.toLowerCase().includes('principal') ? 'principal' : (user.email.toLowerCase().includes('tpo') ? 'placement' : 'hod');
+
+  if (snap.exists()) {
+    profile = snap.data();
+    if (isAuthority && profile.role === 'company') {
+      profile.role = authorityRole;
+      await setDoc(userRef, { role: authorityRole }, { merge: true });
+    }
+  } else {
+    profile = {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName || "",
+      companyName: isAuthority ? "BVC Engineering College" : "",
+      role: isAuthority ? authorityRole : 'company',
+      createdAt: serverTimestamp()
+    };
+    await setDoc(userRef, profile);
+  }
   return { user, profile };
 }
 
@@ -103,10 +159,24 @@ export function subscribeAuth(callback) {
     if (user) {
       try {
         const snap = await getDoc(doc(db, "users", user.uid));
-        const profile = snap.exists() ? snap.data() : { uid: user.uid, email: user.email, role: "company" };
+        let profile = snap.exists() ? snap.data() : null;
+        const isAuthority = isBvcEmail(user.email);
+        const authorityRole = user.email.toLowerCase().includes('principal') ? 'principal' : (user.email.toLowerCase().includes('tpo') ? 'placement' : 'hod');
+        if (!profile) {
+          profile = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName || "",
+            companyName: isAuthority ? "BVC Engineering College" : "",
+            role: isAuthority ? authorityRole : "company"
+          };
+        } else if (isAuthority && profile.role === 'company') {
+          profile.role = authorityRole;
+        }
         callback(user, profile);
       } catch (err) {
-        callback(user, { uid: user.uid, email: user.email, role: "company" });
+        const isAuthority = isBvcEmail(user.email);
+        callback(user, { uid: user.uid, email: user.email, role: isAuthority ? "hod" : "company" });
       }
     } else {
       callback(null, null);
@@ -220,6 +290,25 @@ export async function fetchPendingRequestsForReviewer() {
       createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt
     });
   });
+  return list;
+}
+
+export async function fetchAllRequestsForAuthority() {
+  const q = query(
+    collection(db, "verification_requests"),
+    limit(100)
+  );
+  const snap = await getDocs(q);
+  const list = [];
+  snap.forEach(d => {
+    const data = d.data();
+    list.push({
+      ...data,
+      createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+      decidedAt: data.decidedAt?.toDate ? data.decidedAt.toDate().toISOString() : data.decidedAt
+    });
+  });
+  list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   return list;
 }
 

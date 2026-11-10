@@ -7,11 +7,14 @@ import {
   resetUserPassword,
   resendVerificationEmail,
   checkEmailVerified,
+  isBvcEmail,
+  AUTHORITY_EMAILS,
+  getAuthorityRecipients,
   subscribeAuth,
   submitVerification,
   fetchRequestStatus,
   fetchUserRequests,
-  fetchPendingRequestsForReviewer,
+  fetchAllRequestsForAuthority,
   reviewRequest
 } from './firebase.js';
 
@@ -61,6 +64,10 @@ let busy = false;
 let trackIn = { id: '', code: '' };
 let myRequests = [];
 let pendingRequests = [];
+let allAuthorityRequests = [];
+let hodFilterBranch = 'ALL';
+let hodFilterStatus = 'ALL';
+let hodSearchQuery = '';
 let authMode = 'signin'; // 'signin' | 'signup' | 'forgot' | 'verify'
 let lastRegisteredEmail = '';
 let fromNexora = /[?&]src=nexora/.test(location.search);
@@ -77,7 +84,7 @@ subscribeAuth((user, profile) => {
   updateAcctHeader();
   updateTabs();
   if (role === 'my-requests') loadMyRequests();
-  if (role === 'reviewer') loadReviewerRequests();
+  if (role === 'hod' || role === 'reviewer') loadAuthorityRequests();
   render();
 });
 
@@ -85,7 +92,9 @@ function updateAcctHeader() {
   const acct = document.getElementById('acct');
   if (!acct) return;
   if (currentUser) {
-    const name = userProfile?.displayName || userProfile?.companyName || currentUser.email.split('@')[0];
+    const isAuthority = isBvcEmail(currentUser.email) || ['hod', 'principal', 'placement', 'reviewer'].includes(userProfile?.role);
+    const roleTag = isAuthority ? ' (HOD / College Authority)' : '';
+    const name = (userProfile?.displayName || userProfile?.companyName || currentUser.email.split('@')[0]) + roleTag;
     acct.innerHTML = `<span class="who" title="${esc(currentUser.email)}">👤 ${esc(name)}</span><button class="btn sm o" data-a="signout">Sign Out</button>`;
   } else {
     acct.innerHTML = `<button class="btn sm o" data-go="auth">Sign In</button>`;
@@ -95,18 +104,23 @@ function updateAcctHeader() {
 function updateTabs() {
   const nav = document.getElementById('tabs');
   if (!nav) return;
-  let extraBtn = '';
-  if (currentUser && userProfile?.role === 'reviewer') {
-    extraBtn = `<button data-r="reviewer" class="${role === 'reviewer' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span>Review</span></button>`;
+  const isAuthority = currentUser && (isBvcEmail(currentUser.email) || ['hod', 'principal', 'placement', 'reviewer'].includes(userProfile?.role));
+
+  let roleBtn = '';
+  if (isAuthority) {
+    roleBtn = `<button data-r="hod" class="${role === 'hod' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-5.825-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg><span>HOD Portal</span></button>`;
   } else if (currentUser) {
-    extraBtn = `<button data-r="my-requests" class="${role === 'my-requests' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span>My Submissions</span></button>`;
+    roleBtn = `<button data-r="my-requests" class="${role === 'my-requests' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span>My Submissions</span></button>`;
+  } else {
+    // Show HOD Portal button for unauthenticated users so faculty can easily navigate to it
+    roleBtn = `<button data-r="hod" class="${role === 'hod' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-5.825-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg><span>HOD Portal</span></button>`;
   }
 
   nav.innerHTML = `
     <button data-r="home" class="${role === 'home' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
     <button data-r="company" class="${role === 'company' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span>Submission</span></button>
     <button data-r="track" class="${role === 'track' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><span>Track</span></button>
-    ${extraBtn}
+    ${roleBtn}
     <button data-r="about" class="${role === 'about' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg><span>About</span></button>
     <button data-r="terms" class="${role === 'terms' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>Terms</span></button>
   `;
@@ -311,39 +325,147 @@ function myRequestsView() {
   `;
 }
 
-// Reviewer Dashboard (College Staff / HOD)
-function reviewerView() {
-  return `
-    <div class="row">
-      <div>
-        <h1>Review Verification Requests</h1>
-        <p class="sub">Pending applications submitted by companies for BVC graduates.</p>
+// HOD & College Authority Dashboard
+function hodView() {
+  if (!currentUser) {
+    return `
+      <div class="card" style="max-width:520px;margin:30px auto;text-align:center;padding:36px 24px">
+        <div class="verify-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-5.825-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>
+        </div>
+        <h2>HOD &amp; College Authority Portal</h2>
+        <p class="sub">Exclusive portal for Department HODs, Principal, and Training &amp; Placement Officers.</p>
+        <div class="banner" style="text-align:left;margin:18px 0;font-size:13px">
+          🔒 <b>Authentication Required:</b> Please sign in with your official <b>@bvcgroup.in</b> faculty email address to view and approve verification requests.
+        </div>
+        <button class="btn" style="width:100%" data-go="auth">Sign In with @bvcgroup.in Account →</button>
       </div>
-      <button class="btn sm o" data-a="refreshReview">Refresh List</button>
+    `;
+  }
+
+  const isAuth = isBvcEmail(currentUser.email) || ['hod', 'principal', 'placement', 'reviewer'].includes(userProfile?.role);
+  if (!isAuth) {
+    return `
+      <div class="card" style="max-width:520px;margin:30px auto;text-align:center;padding:36px 24px">
+        <div style="width:64px;height:64px;border-radius:50%;background:var(--err-l);color:var(--err);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:30px;font-weight:700">✕</div>
+        <h2>Access Restricted</h2>
+        <p class="sub">You are signed in as <b>${esc(currentUser.email)}</b>.</p>
+        <div class="banner" style="background:var(--err-l);border-color:var(--err);color:var(--err);margin:16px 0;text-align:left;font-size:13px">
+          ⚠️ This portal requires an authenticated <b>@bvcgroup.in</b> domain account (Department HOD, Principal, or Placement Cell).
+        </div>
+        <div class="row" style="justify-content:center;gap:10px;margin-top:16px">
+          <button class="btn o sm" data-a="signout">Sign Out / Switch Account</button>
+          <button class="btn sm" data-go="home">Return Home</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Filter requests
+  const total = allAuthorityRequests.length;
+  const pendingCount = allAuthorityRequests.filter(r => r.status === 'pending').length;
+  const approvedCount = allAuthorityRequests.filter(r => r.status === 'approved').length;
+  const rejectedCount = allAuthorityRequests.filter(r => r.status === 'rejected').length;
+
+  let list = allAuthorityRequests;
+  if (hodFilterBranch !== 'ALL') {
+    list = list.filter(r => r.branch === hodFilterBranch);
+  }
+  if (hodFilterStatus !== 'ALL') {
+    list = list.filter(r => r.status === hodFilterStatus);
+  }
+  if (hodSearchQuery) {
+    const q = hodSearchQuery.toLowerCase();
+    list = list.filter(r =>
+      (r.name && r.name.toLowerCase().includes(q)) ||
+      (r.roll && r.roll.toLowerCase().includes(q)) ||
+      (r.company && r.company.toLowerCase().includes(q)) ||
+      (r.id && r.id.toLowerCase().includes(q))
+    );
+  }
+
+  const branches = ['ALL', 'CSE', 'CSE (AI & ML)', 'ECE', 'EEE', 'MECH', 'CIVIL', 'IT'];
+  const statuses = ['ALL', 'pending', 'approved', 'rejected'];
+
+  return `
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <div>
+        <h1>HOD &amp; Authority Dashboard</h1>
+        <p class="sub">Departmental verification requests &bull; Signed in as <b>${esc(currentUser.email)}</b></p>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm o" data-a="refreshAuthority">${busy ? 'Refreshing...' : '🔄 Refresh List'}</button>
+      </div>
     </div>
-    ${busy ? '<div class="card empty">Loading pending requests...</div>' :
-      !pendingRequests.length ? '<div class="card empty">🎉 No pending verification requests! All requests are reviewed.</div>' :
-      pendingRequests.map(r => `
+
+    <!-- Stats Cards -->
+    <div class="stats">
+      <div class="stat"><b style="color:var(--txt)">${total}</b><span>Total Requests</span></div>
+      <div class="stat"><b style="color:var(--pri)">${pendingCount}</b><span>Pending Review</span></div>
+      <div class="stat"><b style="color:var(--ok)">${approvedCount}</b><span>Approved</span></div>
+      <div class="stat"><b style="color:var(--err)">${rejectedCount}</b><span>Rejected</span></div>
+    </div>
+
+    <!-- Department & Status Filters -->
+    <div class="card" style="padding:14px;margin-bottom:16px">
+      <div style="font-size:12.5px;font-weight:600;color:var(--txt2);margin-bottom:8px">FILTER BY DEPARTMENT / BRANCH:</div>
+      <div class="filters" style="margin-bottom:12px">
+        ${branches.map(b => `<button class="${hodFilterBranch === b ? 'on' : ''}" data-a="setHodBranch" data-val="${b}">${b}</button>`).join('')}
+      </div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--txt2);margin-bottom:8px">FILTER BY STATUS:</div>
+      <div class="filters" style="margin-bottom:12px">
+        ${statuses.map(s => `<button class="${hodFilterStatus === s ? 'on' : ''}" data-a="setHodStatus" data-val="${s}">${s.toUpperCase()}</button>`).join('')}
+      </div>
+      <div>
+        <input id="hodSearch" placeholder="🔍 Search student name, roll number, or company..." value="${esc(hodSearchQuery)}" style="padding:9px 12px;font-size:14px">
+      </div>
+    </div>
+
+    <!-- Requests List -->
+    ${busy ? '<div class="card empty">Loading candidate verification requests...</div>' :
+      !list.length ? '<div class="card empty">No verification requests found matching your filters.</div>' :
+      list.map(r => `
         <div class="req card">
           <div class="row">
             <div>
-              <h3>${esc(r.name)} <span class="meta">&middot; ${esc(r.roll)}</span></h3>
-              <div class="meta"><b>Branch:</b> ${esc(r.branch)} &middot; <b>Class of</b> ${esc(r.year)}</div>
-              <div class="meta"><b>Company:</b> ${esc(r.company)} &middot; <b>HR:</b> ${esc(r.hrName)} (${esc(r.hrEmail)})</div>
-              <div class="meta"><b>Requested on:</b> ${date(r.createdAt)}</div>
+              <h3>${esc(r.name)} <span class="meta">&middot; Roll: <b>${esc(r.roll)}</b></span></h3>
+              <div class="meta"><b>Branch:</b> ${esc(r.branch)} &middot; <b>Class of:</b> ${esc(r.year)}</div>
+              <div class="meta"><b>Company:</b> ${esc(r.company)} &middot; <b>HR:</b> ${esc(r.hrName || '')} (${esc(r.hrEmail || '')})</div>
+              <div class="meta"><b>Request ID:</b> <code>${esc(r.id)}</code> &middot; <b>Date:</b> ${date(r.createdAt)}</div>
             </div>
-            ${badge(r.status)}
+            <div>${badge(r.status)}</div>
           </div>
           <div class="chips">${names(r.types).map(n => `<span class="chip">${n}</span>`).join('')}</div>
-          ${r.utr ? `<div class="meta">Payment UTR: <code>${esc(r.utr)}</code></div>` : ''}
-          <div style="margin-top:14px;border-top:1px solid var(--div);padding-top:12px">
-            <label>Review Remark (optional)</label>
-            <input id="rem-${r.id}" placeholder="e.g. Verified against college register; degree conferred." style="margin-bottom:10px">
-            <div class="row" style="justify-content:flex-end;gap:8px">
-              <button class="btn no sm" data-a="doReject" data-id="${r.id}">Reject</button>
-              <button class="btn ok sm" data-a="doApprove" data-id="${r.id}">Approve Request</button>
+          ${r.utr ? `<div class="meta" style="margin-top:6px">Payment UTR: <code>${esc(r.utr)}</code></div>` : ''}
+
+          ${r.status === 'pending' ? `
+            <div style="margin-top:14px;border-top:1px solid var(--div);padding-top:12px">
+              <div class="grid" style="margin-bottom:10px">
+                <div>
+                  <label>Approver / Signer Designation</label>
+                  <input id="signer-${r.id}" placeholder="e.g. Dr. K. Rao (HOD CSE)" value="${esc(userProfile?.displayName || 'HOD - ' + (r.branch || ''))}">
+                </div>
+                <div>
+                  <label>Official Remark</label>
+                  <input id="rem-${r.id}" placeholder="e.g. Verified against college register; degree conferred.">
+                </div>
+              </div>
+              <div class="row" style="justify-content:flex-end;gap:8px">
+                <button class="btn no sm" data-a="doReject" data-id="${r.id}">Reject Request</button>
+                <button class="btn ok sm" data-a="doApprove" data-id="${r.id}">✓ Approve Verification</button>
+              </div>
             </div>
-          </div>
+          ` : `
+            <div style="margin-top:12px;border-top:1px solid var(--div);padding-top:10px;font-size:13px;color:var(--txt2)">
+              <div><b>Decided By:</b> ${esc(r.decidedBy || 'College Authority')} on ${date(r.decidedAt || r.createdAt)}</div>
+              ${r.remark ? `<div><b>Remark:</b> ${esc(r.remark)}</div>` : ''}
+              ${r.status === 'approved' ? `
+                <div style="margin-top:10px">
+                  <button class="btn sm o" data-a="cert" data-id="${r.id}">📥 Download Verified Certificate (PDF)</button>
+                </div>
+              ` : ''}
+            </div>
+          `}
         </div>
       `).join('')
     }
@@ -413,11 +535,11 @@ async function loadMyRequests() {
   }
 }
 
-async function loadReviewerRequests() {
+async function loadAuthorityRequests() {
   busy = true;
   render();
   try {
-    pendingRequests = await fetchPendingRequestsForReviewer();
+    allAuthorityRequests = await fetchAllRequestsForAuthority();
   } catch (err) {
     console.error(err);
   } finally {
@@ -494,7 +616,7 @@ function goto(r) {
   window.scrollTo(0, 0);
   updateTabs();
   if (r === 'my-requests') loadMyRequests();
-  if (r === 'reviewer') loadReviewerRequests();
+  if (r === 'hod' || r === 'reviewer') loadAuthorityRequests();
   render();
 }
 
@@ -522,7 +644,7 @@ function render() {
     role === 'track' ? track() :
     role === 'auth' ? authView() :
     role === 'my-requests' ? myRequestsView() :
-    role === 'reviewer' ? reviewerView() :
+    (role === 'hod' || role === 'reviewer') ? hodView() :
     company_form()
   );
   bind();
@@ -546,6 +668,20 @@ function bind() {
     };
   });
 
+  // Search candidate filter in HOD Dashboard
+  const hodSearch = document.getElementById('hodSearch');
+  if (hodSearch) {
+    hodSearch.oninput = e => {
+      hodSearchQuery = e.target.value;
+      render();
+      const reInp = document.getElementById('hodSearch');
+      if (reInp) {
+        reInp.focus();
+        reInp.selectionStart = reInp.selectionEnd = reInp.value.length;
+      }
+    };
+  }
+
   a.onclick = async e => {
     const t = e.target.closest('button,[data-a]');
     if (!t) return;
@@ -556,7 +692,7 @@ function bind() {
 
     if (act === 'cert') {
       const reqId = t.dataset.id;
-      const targetReq = found?.id === reqId ? found : myRequests.find(r => r.id === reqId) || found;
+      const targetReq = found?.id === reqId ? found : myRequests.find(r => r.id === reqId) || allAuthorityRequests.find(r => r.id === reqId) || found;
       if (targetReq) makeCert(targetReq);
       return;
     }
@@ -668,8 +804,20 @@ function bind() {
       return;
     }
 
-    if (act === 'refreshReview') {
-      return loadReviewerRequests();
+    if (act === 'refreshReview' || act === 'refreshAuthority') {
+      return loadAuthorityRequests();
+    }
+
+    if (act === 'setHodBranch') {
+      hodFilterBranch = t.dataset.val;
+      render();
+      return;
+    }
+
+    if (act === 'setHodStatus') {
+      hodFilterStatus = t.dataset.val;
+      render();
+      return;
     }
 
     if (act === 'doApprove' || act === 'doReject') {
@@ -677,10 +825,12 @@ function bind() {
       const isApprove = act === 'doApprove';
       const remInput = document.getElementById('rem-' + reqId);
       const remark = remInput ? remInput.value.trim() : '';
+      const signerInput = document.getElementById('signer-' + reqId);
+      const signer = signerInput && signerInput.value.trim() ? signerInput.value.trim() : (userProfile?.displayName || userProfile?.role?.toUpperCase() || 'HOD / College Authority');
       busy = true; render();
       try {
-        await reviewRequest(reqId, isApprove ? 'approved' : 'rejected', remark, userProfile?.displayName || 'College Reviewer');
-        await loadReviewerRequests();
+        await reviewRequest(reqId, isApprove ? 'approved' : 'rejected', remark, signer);
+        await loadAuthorityRequests();
       } catch (err) {
         alert('Failed to update request: ' + err.message);
       } finally {

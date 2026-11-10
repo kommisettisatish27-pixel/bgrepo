@@ -52,10 +52,12 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isReviewer() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'reviewer';
+    function isCollegeAuthority() {
+      return isAuthenticated() && (
+        request.auth.token.email.matches('.*@bvcgroup[.]in$') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['reviewer', 'hod', 'principal', 'placement'])
+      );
     }
 
     function isValidEmail(email) {
@@ -80,13 +82,14 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return hasRequiredFields(['uid', 'email', 'role', 'createdAt']) &&
-             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'companyName', 'role', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'companyName', 'role', 'branch', 'createdAt']) &&
              data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
-             data.role in ['company', 'reviewer'] &&
+             data.role in ['company', 'reviewer', 'hod', 'principal', 'placement'] &&
              data.createdAt is timestamp &&
              (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
-             (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 120));
+             (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 120)) &&
+             (!('branch' in data) || (data.branch is string && data.branch.size() <= 50));
     }
 
     function isValidRequest(data) {
@@ -125,13 +128,14 @@ service cloud.firestore {
 
     // User profiles collection
     match /users/{userId} {
-      // Users can only read their own profile (protects PII)
-      allow read: if isOwner(userId) || isReviewer();
+      // Users can only read their own profile; college authorities can inspect
+      allow read: if isOwner(userId) || isCollegeAuthority();
 
-      // Only authenticated users can create their own profile as 'company' (prevent self-escalating to 'reviewer')
+      // Authenticated users can create profile; only @bvcgroup.in users can claim college authority roles
       allow create: if isOwner(userId) &&
                        isValidUser(request.resource.data) &&
-                       request.resource.data.role == 'company';
+                       (request.resource.data.role == 'company' ||
+                        (request.resource.data.role in ['reviewer', 'hod', 'principal', 'placement'] && request.auth.token.email.matches('.*@bvcgroup[.]in$')));
 
       // Updates can only be made by the user themselves without changing immutable fields or role
       allow update: if isOwner(userId) &&
@@ -143,21 +147,21 @@ service cloud.firestore {
 
     // Verification Requests collection
     match /verification_requests/{requestId} {
-      // Authenticated creators can read their own requests; reviewers can read all
+      // Authenticated creators can read their own requests; college authorities can read all
       // Public / guest status tracking allowed if querying document with matching trackingCode
-      allow get: if (isAuthenticated() && (resource.data.createdByUid == request.auth.uid || isReviewer())) ||
+      allow get: if (isAuthenticated() && (resource.data.createdByUid == request.auth.uid || isCollegeAuthority())) ||
                     (resource.data.trackingCode == request.auth.token.trackingCode || resource.data.id == requestId);
 
       allow list: if isAuthenticated() && (
-        isReviewer() ||
+        isCollegeAuthority() ||
         (request.query.limit <= 50)
       );
 
       // Authenticated users or unauthenticated guest submitters can submit a new valid request
       allow create: if isValidRequest(request.resource.data);
 
-      // Only reviewers can update a request to approve/reject it
-      allow update: if isReviewer() && isValidReviewUpdate();
+      // Only college authorities can update a request to approve/reject it
+      allow update: if isCollegeAuthority() && isValidReviewUpdate();
 
       // Deletion is disallowed to preserve audit trail
       allow delete: if false;
