@@ -226,9 +226,11 @@ export async function submitVerification(req) {
     utr: req.utr ? req.utr.trim().toUpperCase() : "",
     amount: req.amount || 500,
     paymentOrderId: req.paymentOrderId ? req.paymentOrderId.trim() : "",
-    createdAt: serverTimestamp(),
-    createdByUid: auth.currentUser ? auth.currentUser.uid : ""
+    createdAt: serverTimestamp()
   };
+  if (auth.currentUser) {
+    payload.createdByUid = auth.currentUser.uid;
+  }
 
   await setDoc(docRef, payload);
   return { id, trackingCode, name: payload.name };

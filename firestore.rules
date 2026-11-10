@@ -111,7 +111,7 @@ service cloud.firestore {
              (!('utr' in data) || (data.utr is string && data.utr.size() <= 40)) &&
              (!('paymentOrderId' in data) || (data.paymentOrderId is string && data.paymentOrderId.size() <= 60)) &&
              (!('amount' in data) || (data.amount is number || (data.amount is string && data.amount.size() <= 20))) &&
-             (!('createdByUid' in data) || (isAuthenticated() && data.createdByUid == request.auth.uid));
+             (!('createdByUid' in data) || data.createdByUid == "" || (isAuthenticated() && data.createdByUid == request.auth.uid));
     }
 
     function isValidReviewUpdate() {
