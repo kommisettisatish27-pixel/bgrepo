@@ -19,6 +19,13 @@ import {
   reviewRequest
 } from './firebase.js';
 
+import {
+  GRAM_GATEWAY_CONFIG,
+  createGramPaymentOrder,
+  verifyGramPaymentOrder,
+  openGramCheckoutPopup
+} from './gateway.js';
+
 const TYPES = [
   { id: 'degree', t: 'Degree & course completion', d: 'Confirms the degree was awarded' },
   { id: 'marks', t: 'Marks & CGPA', d: 'Semester-wise grades and final CGPA' },
@@ -26,18 +33,86 @@ const TYPES = [
   { id: 'conduct', t: 'Attendance & conduct', d: 'Overall attendance and conduct record' }
 ];
 
-/* ===== PAYMENT SETTINGS ===== */
-const PAY = { on: false, fees: { degree: 0, marks: 0, backlogs: 0, conduct: 0 }, qr: '', upi: '', payee: 'Bonam Venkata Chalamayya Engineering College - Odalarevu' };
-const feeOf = id => PAY.fees[id] || 0;
-const amtOf = sel => (sel || []).reduce((n, id) => n + feeOf(id), 0);
-const payLabel = a => PAY.on ? 'Submit after payment' : 'Submit request';
+/* ===== PAYMENT SETTINGS (Gram UPI Gateway · gateway.anujbots.in) ===== */
+const PAY = {
+  on: true,
+  amount: 500, // Fixed 500 INR per single verification request
+  payee: 'BVC Engineering College (Autonomous) - Odalarevu'
+};
+const feeOf = () => 500;
+const amtOf = () => 500;
+const payLabel = () => 'Pay ₹500 via UPI & Submit';
 
-const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
-const EYEOFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.1 10.1 0 0112 19c-6.4 0-10-7-10-7a18.5 18.5 0 015.1-5.9M9.9 5.2A9.7 9.7 0 0112 5c6.4 0 10 7 10 7a18.6 18.6 0 01-2.2 3.2M1 1l22 22M9.9 9.9a3 3 0 004.2 4.2"/></svg>';
+let currentGramOrder = null;
+let gramPollTimer = null;
+let gramSecondsLeft = 300;
+let gramCountdownTimer = null;
 
 function payBlock(amt) {
   if (!PAY.on) return '';
-  return `${amt > 0 ? `<div class="total"><span>Total fee</span><span>${inr(amt)}</span></div>` : ''}<h2>Payment</h2><p class="meta" style="margin-bottom:10px">Scan the QR with PhonePe, Google Pay, Paytm or any UPI app and pay to ${esc(PAY.payee)}. Then enter the UTR number from the payment receipt below.</p><div class="qrbox">${PAY.qr ? `<img src="${PAY.qr}" alt="Payment QR code">` : '<div class="qrph">Payment QR will appear here</div>'}</div>${PAY.upi ? `<p class="meta" style="text-align:center;margin:8px 0">UPI ID: <b>${esc(PAY.upi)}</b></p>` : ''}<label>UTR / transaction ID</label><input id="utr" autocapitalize="characters" maxlength="22" placeholder="12-digit UTR from your payment app" value="${esc(draft.utr || '')}">`;
+
+  if (currentGramOrder) {
+    const min = Math.floor(Math.max(0, gramSecondsLeft) / 60);
+    const sec = ('0' + (Math.max(0, gramSecondsLeft) % 60)).slice(-2);
+    return `
+      <div class="card" style="border:1.5px solid var(--pri);background:#FFFCF5;padding:18px;margin-top:16px">
+        <div class="row" style="align-items:center;margin-bottom:12px">
+          <div>
+            <div class="pay-gateway-badge">🛡️ Gram UPI Gateway · Auto-Verification</div>
+            <h2 style="margin:8px 0 2px;font-size:17px">Order: <code>${esc(currentGramOrder.order_id)}</code></h2>
+            <div class="meta">Verification fee for <b>${esc(draft.name)} (${esc(draft.roll)})</b></div>
+          </div>
+          <div style="text-align:right">
+            <span style="font-size:24px;font-weight:700;color:var(--pri-d)">₹500.00</span>
+            <div class="meta">Expires in: <b id="gram-timer" style="color:var(--acc)">${min}:${sec}</b></div>
+          </div>
+        </div>
+
+        <button type="button" class="btn" style="width:100%;margin-bottom:12px;font-size:15px;height:46px" data-a="openGramModal">📱 Open UPI Checkout (PhonePe / GPay / Paytm / QR)</button>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px">
+          ${currentGramOrder.intent?.phonepe ? `<a href="${currentGramOrder.intent.phonepe}" target="_blank" rel="noopener" class="btn sm o">📱 Pay on PhonePe</a>` : ''}
+          ${currentGramOrder.intent?.paytm ? `<a href="${currentGramOrder.intent.paytm}" target="_blank" rel="noopener" class="btn sm o">📱 Pay on Paytm</a>` : ''}
+          <a href="${currentGramOrder.payment_url}" target="_blank" rel="noopener" class="btn sm o">🌐 Open Web Gateway ↗</a>
+        </div>
+
+        <div class="qrbox" style="margin:14px auto">
+          <img src="${currentGramOrder.qr_url}" alt="UPI QR Code" style="width:210px;height:210px">
+        </div>
+        <p class="meta" style="text-align:center;font-weight:500;margin-top:6px">Scan with any UPI app (Google Pay, PhonePe, Paytm, BHIM, Cred, FamPay)</p>
+        <p class="meta" style="text-align:center">UPI ID: <b>${esc(currentGramOrder.upi_id)}</b></p>
+
+        <div class="banner" style="background:#FFF9E6;border-color:#F0B429;color:#744210;display:flex;align-items:center;gap:10px;margin-top:14px;font-size:13px">
+          <span class="pulse-dot"></span>
+          <span><b>Awaiting payment confirmation...</b> Once you pay in your UPI app, this page verifies and submits automatically. No manual UTR entry needed!</span>
+        </div>
+
+        <div class="row" style="justify-content:center;gap:12px;margin-top:14px">
+          <button type="button" class="btn sm o" data-a="checkGramPayment">${busy ? 'Verifying...' : '🔄 Check Status Now'}</button>
+          <button type="button" class="btn-link" style="font-size:12.5px" data-a="cancelGramPayment">Cancel / Restart</button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="card" style="border:1px solid var(--bd);background:var(--inp);padding:18px;margin-top:16px">
+      <div class="row" style="align-items:center">
+        <div>
+          <div class="pay-gateway-badge">🛡️ Gram UPI Gateway (gateway.anujbots.in)</div>
+          <h3 style="margin:6px 0 2px;font-size:16px">Statutory Verification Processing Fee</h3>
+          <p class="meta">Fee required per candidate for official college records &amp; register verification.</p>
+        </div>
+        <div style="font-size:24px;font-weight:700;color:var(--pri-d)">₹500 INR</div>
+      </div>
+      <div style="margin-top:14px">
+        <button type="button" class="btn" style="width:100%;height:46px;font-size:15px" data-a="startGramPay" ${busy ? 'disabled' : ''}>
+          ${busy ? 'Connecting to Gateway...' : '💳 Pay ₹500 via UPI &amp; Submit Request →'}
+        </button>
+      </div>
+      <p class="meta" style="text-align:center;margin-top:8px;font-size:12px">Supports PhonePe, Google Pay, Paytm, BHIM, Cred, Net Banking, and all UPI apps.</p>
+    </div>
+  `;
 }
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -496,17 +571,35 @@ function company_form() {
   }
 
   if (step === 2) {
-    const sel = draft.types || [];
-    const amt = amtOf(sel);
-    return head + sh + `<div class="card"><h2>What should the college verify?</h2>${TYPES.map(t => `<label class="opt"><input type="checkbox" value="${t.id}" ${sel.includes(t.id) ? 'checked' : ''}><span class="t">${t.t}<small>${t.d}</small></span>${feeOf(t.id) ? `<span class="p">${inr(feeOf(t.id))}</span>` : ''}</label>`).join('')}
-    <div id="payarea">${payBlock(amt)}</div><div class="err" id="e-pay"></div>
-    <div class="row" style="margin-top:16px"><button class="btn o" data-a="back">Back</button><button class="btn" data-a="submit" id="paybtn" ${sel.length && !busy ? '' : 'disabled'}>${busy ? 'Submitting to Firestore...' : payLabel(amt)}</button></div></div>`;
+    const sel = draft.types || ['degree', 'marks'];
+    if (!draft.types) draft.types = sel;
+    return head + sh + `<div class="card">
+      <h2>Select Verification Scope</h2>
+      <p class="sub">Choose the academic credentials to verify for <b>${esc(draft.name)}</b> (Roll: ${esc(draft.roll)}):</p>
+      ${TYPES.map(t => `<label class="opt"><input type="checkbox" value="${t.id}" ${sel.includes(t.id) ? 'checked' : ''}><span class="t">${t.t}<small>${t.d}</small></span><span class="p">✓ Included</span></label>`).join('')}
+      <div id="payarea">${payBlock(500)}</div>
+      <div class="err" id="e-pay"></div>
+      <div class="row" style="margin-top:16px"><button class="btn o" data-a="back" ${busy ? 'disabled' : ''}>← Back to Details</button></div>
+    </div>`;
   }
 
-  return head + sh + `<div class="card ok-box"><div class="tick">&#10003;</div><h2>Request submitted</h2><p class="sub">Your request for ${esc(sent.name)} has been recorded in the Firestore database.</p>
-  <div class="idgrid"><div class="idbox"><small>Request ID</small><b>${esc(sent.id)}</b></div><div class="idbox"><small>Tracking code</small><b>${esc(sent.code)}</b></div></div>
-  <div class="banner" style="text-align:left">Your request is now in <b>pending</b> review by the college Examination &amp; Placement cell. Write down these credentials or access them directly from your account.</div>
-  <button class="btn" data-a="trackNow">Track this request</button> <button class="btn o" data-a="new">New request</button></div>`;
+  return head + sh + `<div class="card ok-box">
+    <div class="tick">&#10003;</div>
+    <h2>Request Submitted &amp; Payment Confirmed!</h2>
+    <p class="sub">Your payment of <b>₹500 INR</b> has been verified via Gram UPI Gateway. The verification request for <b>${esc(sent.name)}</b> is now submitted to the college.</p>
+    <div class="idgrid">
+      <div class="idbox"><small>Request ID</small><b>${esc(sent.id)}</b></div>
+      <div class="idbox"><small>Tracking Code</small><b>${esc(sent.code)}</b></div>
+    </div>
+    <div class="banner" style="text-align:left">
+      ✓ Notifications have been dispatched simultaneously to the <b>${esc(draft.branch || 'Department')} HOD</b>, <b>Principal</b>, and <b>Placement Cell</b>.
+      You can track status anytime using your Request ID and Tracking Code.
+    </div>
+    <div class="row" style="justify-content:center;gap:10px;margin-top:18px">
+      <button class="btn" data-a="trackNow">Track This Request →</button>
+      <button class="btn o" data-a="new">Submit Another Verification</button>
+    </div>
+  </div>`;
 }
 
 function track() {
@@ -566,6 +659,134 @@ async function loadAuthorityRequests() {
   } finally {
     busy = false;
     render();
+  }
+}
+
+async function startGramPay() {
+  const sel = draft.types || [];
+  if (!sel.length) {
+    const el = document.getElementById('e-pay');
+    if (el) el.textContent = 'Please select at least one item to verify.';
+    return;
+  }
+  busy = true;
+  render();
+  try {
+    const order = await createGramPaymentOrder({
+      customerName: draft.hrName || draft.company,
+      customerPhone: draft.phone,
+      roll: draft.roll,
+      note: `BVC Verification: ${draft.name} (${draft.roll})`
+    });
+    currentGramOrder = order;
+    gramSecondsLeft = order.valid_seconds || 300;
+    busy = false;
+    render();
+
+    // Start countdown timer
+    if (gramCountdownTimer) clearInterval(gramCountdownTimer);
+    gramCountdownTimer = setInterval(() => {
+      gramSecondsLeft--;
+      const el = document.getElementById('gram-timer');
+      if (el) {
+        const m = Math.floor(Math.max(0, gramSecondsLeft) / 60);
+        const s = ('0' + (Math.max(0, gramSecondsLeft) % 60)).slice(-2);
+        el.textContent = `${m}:${s}`;
+      }
+      if (gramSecondsLeft <= 0) {
+        clearInterval(gramCountdownTimer);
+        clearInterval(gramPollTimer);
+      }
+    }, 1000);
+
+    // Automatically open Gram Checkout popup
+    openGramCheckoutPopup(order.payment_url, {
+      onSuccess: async p => {
+        await handlePaymentCompleted(p);
+      },
+      onExpired: () => {
+        alert('Payment window expired. Please create a new payment order.');
+        cancelGramPay();
+      }
+    });
+
+    // Start polling autoverify.php every 3 seconds
+    startGramPolling(order.order_id);
+  } catch (err) {
+    busy = false;
+    render();
+    const el = document.getElementById('e-pay');
+    if (el) el.textContent = err.message;
+  }
+}
+
+function startGramPolling(orderId) {
+  if (gramPollTimer) clearInterval(gramPollTimer);
+  gramPollTimer = setInterval(async () => {
+    if (!currentGramOrder || currentGramOrder.order_id !== orderId) {
+      clearInterval(gramPollTimer);
+      return;
+    }
+    try {
+      const res = await verifyGramPaymentOrder(orderId);
+      if (res.isPaid) {
+        clearInterval(gramPollTimer);
+        if (gramCountdownTimer) clearInterval(gramCountdownTimer);
+        await handlePaymentCompleted({
+          order_id: orderId,
+          amount: res.amount || 500,
+          utr: res.utr || orderId
+        });
+      }
+    } catch (e) {
+      console.warn("Polling payment check:", e);
+    }
+  }, 3000);
+}
+
+function cancelGramPay() {
+  if (gramPollTimer) clearInterval(gramPollTimer);
+  if (gramCountdownTimer) clearInterval(gramCountdownTimer);
+  gramPollTimer = null;
+  gramCountdownTimer = null;
+  currentGramOrder = null;
+  render();
+}
+
+async function handlePaymentCompleted(p) {
+  if (gramPollTimer) clearInterval(gramPollTimer);
+  if (gramCountdownTimer) clearInterval(gramCountdownTimer);
+  gramPollTimer = null;
+  gramCountdownTimer = null;
+  busy = true;
+  render();
+  try {
+    const utr = p.utr || p.order_id || currentGramOrder?.order_id || 'GRAM_PAID';
+    const res = await submitVerification({
+      company: draft.company,
+      hrName: draft.hrName,
+      hrEmail: draft.hr,
+      hrPhone: draft.phone,
+      name: draft.name,
+      roll: draft.roll,
+      branch: draft.branch,
+      year: draft.year,
+      types: draft.types && draft.types.length ? draft.types : ['degree'],
+      utr,
+      paymentOrderId: p.order_id || currentGramOrder?.order_id || '',
+      amount: 500
+    });
+    sent = res;
+    trackIn = { id: res.id, code: res.trackingCode };
+    currentGramOrder = null;
+    draft = {};
+    busy = false;
+    step = 3;
+    render();
+  } catch (err) {
+    busy = false;
+    render();
+    alert('Payment was confirmed, but failed to record verification request: ' + err.message);
   }
 }
 
@@ -867,8 +1088,55 @@ function bind() {
       return;
     }
 
-    if (act === 'new') { draft = {}; sent = null; step = 1; view = 'form'; return render(); }
-    if (act === 'back') { step = 1; return render(); }
+    if (act === 'startGramPay') {
+      return startGramPay();
+    }
+
+    if (act === 'openGramModal') {
+      if (currentGramOrder?.payment_url) {
+        openGramCheckoutPopup(currentGramOrder.payment_url, {
+          onSuccess: handlePaymentCompleted,
+          onExpired: () => {
+            alert('Payment session expired. Please restart.');
+            cancelGramPay();
+          }
+        });
+      }
+      return;
+    }
+
+    if (act === 'checkGramPayment') {
+      if (!currentGramOrder) return;
+      busy = true; render();
+      try {
+        const res = await verifyGramPaymentOrder(currentGramOrder.order_id);
+        if (res.isPaid) {
+          await handlePaymentCompleted({
+            order_id: currentGramOrder.order_id,
+            amount: res.amount || 500,
+            utr: res.utr || currentGramOrder.order_id
+          });
+          return;
+        } else {
+          busy = false;
+          render();
+          alert('Status: ' + (res.status || 'PENDING') + '. Waiting for payment confirmation.');
+        }
+      } catch (err) {
+        busy = false;
+        render();
+        alert('Could not verify status: ' + err.message);
+      }
+      return;
+    }
+
+    if (act === 'cancelGramPayment') {
+      cancelGramPay();
+      return;
+    }
+
+    if (act === 'new') { cancelGramPay(); draft = {}; sent = null; step = 1; view = 'form'; return render(); }
+    if (act === 'back') { cancelGramPay(); step = 1; return render(); }
     if (act === 'check') return checkStatus();
     if (act === 'submit') return submitReq();
     if (act === 'trackNow') { role = 'track'; found = null; updateTabs(); render(); return checkStatus(); }
@@ -910,16 +1178,8 @@ function bind() {
   a.onchange = e => {
     if (e.target.type === 'checkbox') {
       draft.types = [...a.querySelectorAll('.opt input:checked')].map(i => i.value);
-      const u = document.getElementById('utr');
-      if (u) draft.utr = u.value;
-      const amt = amtOf(draft.types);
       const payArea = document.getElementById('payarea');
-      if (payArea) payArea.innerHTML = payBlock(amt);
-      const b = document.getElementById('paybtn');
-      if (b) {
-        b.disabled = !draft.types.length;
-        b.textContent = payLabel(amt);
-      }
+      if (payArea) payArea.innerHTML = payBlock(500);
     }
   };
 }

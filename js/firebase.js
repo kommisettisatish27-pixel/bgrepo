@@ -224,6 +224,8 @@ export async function submitVerification(req) {
     types: req.types,
     status: "pending",
     utr: req.utr ? req.utr.trim().toUpperCase() : "",
+    amount: req.amount || 500,
+    paymentOrderId: req.paymentOrderId ? req.paymentOrderId.trim() : "",
     createdAt: serverTimestamp(),
     createdByUid: auth.currentUser ? auth.currentUser.uid : ""
   };

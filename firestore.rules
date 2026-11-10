@@ -94,7 +94,7 @@ service cloud.firestore {
 
     function isValidRequest(data) {
       return hasRequiredFields(['id', 'trackingCode', 'company', 'hrName', 'hrEmail', 'name', 'roll', 'branch', 'year', 'types', 'status', 'createdAt']) &&
-             hasOnlyAllowedFields(['id', 'trackingCode', 'company', 'hrName', 'hrEmail', 'hrPhone', 'name', 'roll', 'branch', 'year', 'types', 'status', 'remark', 'decidedBy', 'decidedAt', 'utr', 'createdAt', 'createdByUid']) &&
+             hasOnlyAllowedFields(['id', 'trackingCode', 'company', 'hrName', 'hrEmail', 'hrPhone', 'name', 'roll', 'branch', 'year', 'types', 'status', 'remark', 'decidedBy', 'decidedAt', 'utr', 'amount', 'paymentOrderId', 'createdAt', 'createdByUid']) &&
              data.id is string && data.id.size() >= 4 && data.id.size() <= 32 &&
              data.trackingCode is string && data.trackingCode.size() >= 4 && data.trackingCode.size() <= 64 &&
              data.company is string && data.company.size() > 0 && data.company.size() <= 150 &&
@@ -108,13 +108,15 @@ service cloud.firestore {
              data.status == 'pending' &&
              data.createdAt is timestamp &&
              (!('hrPhone' in data) || (data.hrPhone is string && data.hrPhone.size() <= 20)) &&
-             (!('utr' in data) || (data.utr is string && data.utr.size() <= 30)) &&
+             (!('utr' in data) || (data.utr is string && data.utr.size() <= 40)) &&
+             (!('paymentOrderId' in data) || (data.paymentOrderId is string && data.paymentOrderId.size() <= 60)) &&
+             (!('amount' in data) || (data.amount is number || (data.amount is string && data.amount.size() <= 20))) &&
              (!('createdByUid' in data) || (isAuthenticated() && data.createdByUid == request.auth.uid));
     }
 
     function isValidReviewUpdate() {
       let allowedDecisionKeys = ['status', 'remark', 'decidedBy', 'decidedAt'];
-      return areImmutableFieldsUnchanged(['id', 'trackingCode', 'company', 'hrName', 'hrEmail', 'name', 'roll', 'branch', 'year', 'types', 'createdAt', 'createdByUid']) &&
+      return areImmutableFieldsUnchanged(['id', 'trackingCode', 'company', 'hrName', 'hrEmail', 'name', 'roll', 'branch', 'year', 'types', 'amount', 'paymentOrderId', 'createdAt', 'createdByUid']) &&
              request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedDecisionKeys) &&
              request.resource.data.status in ['approved', 'rejected'] &&
              request.resource.data.decidedAt is timestamp &&
