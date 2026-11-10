@@ -25,7 +25,7 @@ export async function createGramPaymentOrder({ customerName, customerPhone, roll
 
   const json = await res.json();
   if (json.status !== "success" || !json.data) {
-    throw new Error(json.message || "Failed to initiate payment with Gram Gateway.");
+    throw new Error(json.message || "Failed to initiate UPI payment session.");
   }
 
   return json.data;

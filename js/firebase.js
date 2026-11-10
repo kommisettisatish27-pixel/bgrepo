@@ -67,11 +67,16 @@ export function getAuthorityRecipients(branch) {
 }
 
 export async function signUpUser(email, password, displayName, companyName, branch) {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  const cleanEmail = (email || '').trim();
+  const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
   const user = credential.user;
 
   if (displayName) {
-    await updateProfile(user, { displayName });
+    try {
+      await updateProfile(user, { displayName: displayName.trim() });
+    } catch (e) {
+      console.warn("Update profile:", e);
+    }
   }
 
   // Send email verification link to user's inbox
@@ -82,10 +87,10 @@ export async function signUpUser(email, password, displayName, companyName, bran
   }
 
   // Determine role based on email domain
-  const isAuthority = isBvcEmail(email);
+  const isAuthority = isBvcEmail(cleanEmail);
   let role = 'company';
   if (isAuthority) {
-    const lower = email.toLowerCase();
+    const lower = cleanEmail.toLowerCase();
     if (lower.includes('principal')) role = 'principal';
     else if (lower.includes('tpo') || lower.includes('placement')) role = 'placement';
     else role = 'hod';
@@ -96,13 +101,17 @@ export async function signUpUser(email, password, displayName, companyName, bran
   const profileData = {
     uid: user.uid,
     email: user.email,
-    displayName: displayName || "",
-    companyName: isAuthority ? "BVC Engineering College" : (companyName || ""),
+    displayName: displayName ? displayName.trim() : "",
+    companyName: isAuthority ? "BVC Engineering College" : (companyName ? companyName.trim() : ""),
     role,
     branch: branch || "",
     createdAt: serverTimestamp()
   };
-  await setDoc(userRef, profileData);
+  try {
+    await setDoc(userRef, profileData);
+  } catch (err) {
+    console.warn("Could not save initial user doc:", err);
+  }
 
   return { user, profile: profileData };
 }
@@ -119,31 +128,46 @@ export async function checkEmailVerified() {
 }
 
 export async function signInUser(email, password) {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const cleanEmail = (email || '').trim();
+  const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
   const user = credential.user;
   const userRef = doc(db, "users", user.uid);
-  const snap = await getDoc(userRef);
-  let profile;
   const isAuthority = isBvcEmail(user.email);
   const authorityRole = user.email.toLowerCase().includes('principal') ? 'principal' : (user.email.toLowerCase().includes('tpo') ? 'placement' : 'hod');
+  let profile = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || "",
+    role: isAuthority ? authorityRole : 'company'
+  };
 
-  if (snap.exists()) {
-    profile = snap.data();
-    if (isAuthority && profile.role === 'company') {
-      profile.role = authorityRole;
-      await setDoc(userRef, { role: authorityRole }, { merge: true });
+  try {
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      profile = snap.data();
+      if (isAuthority && profile.role === 'company') {
+        profile.role = authorityRole;
+        try {
+          await setDoc(userRef, { role: authorityRole }, { merge: true });
+        } catch (e) {
+          console.warn("Could not update role in doc:", e);
+        }
+      }
+    } else {
+      profile = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || "",
+        companyName: isAuthority ? "BVC Engineering College" : "",
+        role: isAuthority ? authorityRole : 'company',
+        createdAt: serverTimestamp()
+      };
+      await setDoc(userRef, profile);
     }
-  } else {
-    profile = {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName || "",
-      companyName: isAuthority ? "BVC Engineering College" : "",
-      role: isAuthority ? authorityRole : 'company',
-      createdAt: serverTimestamp()
-    };
-    await setDoc(userRef, profile);
+  } catch (err) {
+    console.warn("Could not read or update user profile in Firestore:", err);
   }
+
   return { user, profile };
 }
 

@@ -33,7 +33,7 @@ const TYPES = [
   { id: 'conduct', t: 'Attendance & conduct', d: 'Overall attendance and conduct record' }
 ];
 
-/* ===== PAYMENT SETTINGS (Gram UPI Gateway · gateway.anujbots.in) ===== */
+/* ===== PAYMENT SETTINGS ===== */
 const PAY = {
   on: true,
   amount: 500, // Fixed 500 INR per single verification request
@@ -42,6 +42,9 @@ const PAY = {
 const feeOf = () => 500;
 const amtOf = () => 500;
 const payLabel = () => 'Pay ₹500 via UPI & Submit';
+
+const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYEOFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.1 10.1 0 0112 19c-6.4 0-10-7-10-7a18.5 18.5 0 015.1-5.9M9.9 5.2A9.7 9.7 0 0112 5c6.4 0 10 7 10 7a18.6 18.6 0 01-2.2 3.2M1 1l22 22M9.9 9.9a3 3 0 004.2 4.2"/></svg>';
 
 let currentGramOrder = null;
 let gramPollTimer = null;
@@ -58,7 +61,7 @@ function payBlock(amt) {
       <div class="card" style="border:1.5px solid var(--pri);background:#FFFCF5;padding:18px;margin-top:16px">
         <div class="row" style="align-items:center;margin-bottom:12px">
           <div>
-            <div class="pay-gateway-badge">🛡️ Gram UPI Gateway · Auto-Verification</div>
+            <div class="pay-gateway-badge">🛡️ Instant UPI Payment · Auto-Verification</div>
             <h2 style="margin:8px 0 2px;font-size:17px">Order: <code>${esc(currentGramOrder.order_id)}</code></h2>
             <div class="meta">Verification fee for <b>${esc(draft.name)} (${esc(draft.roll)})</b></div>
           </div>
@@ -73,7 +76,7 @@ function payBlock(amt) {
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px">
           ${currentGramOrder.intent?.phonepe ? `<a href="${currentGramOrder.intent.phonepe}" target="_blank" rel="noopener" class="btn sm o">📱 Pay on PhonePe</a>` : ''}
           ${currentGramOrder.intent?.paytm ? `<a href="${currentGramOrder.intent.paytm}" target="_blank" rel="noopener" class="btn sm o">📱 Pay on Paytm</a>` : ''}
-          <a href="${currentGramOrder.payment_url}" target="_blank" rel="noopener" class="btn sm o">🌐 Open Web Gateway ↗</a>
+          <a href="${currentGramOrder.payment_url}" target="_blank" rel="noopener" class="btn sm o">🌐 Open Payment Page ↗</a>
         </div>
 
         <div class="qrbox" style="margin:14px auto">
@@ -99,7 +102,7 @@ function payBlock(amt) {
     <div class="card" style="border:1px solid var(--bd);background:var(--inp);padding:18px;margin-top:16px">
       <div class="row" style="align-items:center">
         <div>
-          <div class="pay-gateway-badge">🛡️ Gram UPI Gateway (gateway.anujbots.in)</div>
+          <div class="pay-gateway-badge">🛡️ Official UPI Verification Gateway</div>
           <h3 style="margin:6px 0 2px;font-size:16px">Statutory Verification Processing Fee</h3>
           <p class="meta">Fee required per candidate for official college records &amp; register verification.</p>
         </div>
@@ -586,7 +589,7 @@ function company_form() {
   return head + sh + `<div class="card ok-box">
     <div class="tick">&#10003;</div>
     <h2>Request Submitted &amp; Payment Confirmed!</h2>
-    <p class="sub">Your payment of <b>₹500 INR</b> has been verified via Gram UPI Gateway. The verification request for <b>${esc(sent.name)}</b> is now submitted to the college.</p>
+    <p class="sub">Your payment of <b>₹500 INR</b> has been verified successfully via UPI. The verification request for <b>${esc(sent.name)}</b> is now submitted to the college.</p>
     <div class="idgrid">
       <div class="idbox"><small>Request ID</small><b>${esc(sent.id)}</b></div>
       <div class="idbox"><small>Tracking Code</small><b>${esc(sent.code)}</b></div>
@@ -761,7 +764,7 @@ async function handlePaymentCompleted(p) {
   busy = true;
   render();
   try {
-    const utr = p.utr || p.order_id || currentGramOrder?.order_id || 'GRAM_PAID';
+    const utr = p.utr || p.order_id || currentGramOrder?.order_id || 'UPI_PAID';
     const res = await submitVerification({
       company: draft.company,
       hrName: draft.hrName,
@@ -964,13 +967,24 @@ function bind() {
       if (!email || !pw) { er.textContent = 'Please enter both email and password.'; return; }
       busy = true; render();
       try {
-        await signInUser(email, pw);
+        const res = await signInUser(email, pw);
         busy = false;
-        goto('company');
+        const isAuth = isBvcEmail(email) || ['hod', 'principal', 'placement', 'reviewer'].includes(res?.profile?.role);
+        goto(isAuth ? 'hod' : 'company');
       } catch (err) {
         busy = false;
         render();
-        document.getElementById('e-auth').textContent = err.message.replace('Firebase: ', '');
+        const errEl = document.getElementById('e-auth');
+        if (errEl) {
+          const m = err.message || '';
+          if (m.includes('invalid-credential') || m.includes('wrong-password') || m.includes('user-not-found')) {
+            errEl.textContent = 'Invalid email or password. Please check your credentials.';
+          } else if (m.includes('invalid-email')) {
+            errEl.textContent = 'Please enter a valid email address.';
+          } else {
+            errEl.textContent = m.replace(/^Firebase:\s*/, '').replace(/\s*\(auth\/[^)]+\)\.?$/, '');
+          }
+        }
       }
       return;
     }
@@ -993,7 +1007,19 @@ function bind() {
       } catch (err) {
         busy = false;
         render();
-        document.getElementById('e-auth').textContent = err.message.replace('Firebase: ', '');
+        const errEl = document.getElementById('e-auth');
+        if (errEl) {
+          const m = err.message || '';
+          if (m.includes('email-already-in-use')) {
+            errEl.textContent = 'An account with this email already exists. Please Sign In.';
+          } else if (m.includes('weak-password')) {
+            errEl.textContent = 'Password must be at least 6 characters.';
+          } else if (m.includes('invalid-email')) {
+            errEl.textContent = 'Please enter a valid email address.';
+          } else {
+            errEl.textContent = m.replace(/^Firebase:\s*/, '').replace(/\s*\(auth\/[^)]+\)\.?$/, '');
+          }
+        }
       }
       return;
     }
