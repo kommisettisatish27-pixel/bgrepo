@@ -130,10 +130,27 @@ const date = ts => {
 };
 const badge = s => `<span class="badge b-${s}">${s ? (s[0].toUpperCase() + s.slice(1)) : 'Unknown'}</span>`;
 
+// URL Route Detection (e.g. /hod or #hod)
+function detectRoleFromUrl() {
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?/, '');
+  const q = new URLSearchParams(window.location.search);
+
+  if (path === '/hod' || path.endsWith('/hod') || hash === 'hod' || q.get('role') === 'hod' || q.has('hod')) {
+    return 'hod';
+  }
+  if (path === '/track' || hash === 'track' || q.get('role') === 'track') return 'track';
+  if (path === '/submission' || path === '/company' || hash === 'submission' || hash === 'company') return 'company';
+  if (path === '/about' || hash === 'about') return 'about';
+  if (path === '/terms' || hash === 'terms') return 'terms';
+  if (path === '/auth' || hash === 'auth') return 'auth';
+  return 'home';
+}
+
 // State
 let currentUser = null;
 let userProfile = null;
-let role = 'home';
+let role = detectRoleFromUrl();
 let view = 'form';
 let draft = {};
 let step = 1;
@@ -192,8 +209,8 @@ function updateTabs() {
   } else if (currentUser) {
     roleBtn = `<button data-r="my-requests" class="${role === 'my-requests' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span>My Submissions</span></button>`;
   } else {
-    // Show HOD Portal button for unauthenticated users so faculty can easily navigate to it
-    roleBtn = `<button data-r="hod" class="${role === 'hod' ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-5.825-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg><span>HOD Portal</span></button>`;
+    // Hidden from public UI! Only accessible when manually navigating to /hod
+    roleBtn = '';
   }
 
   nav.innerHTML = `
@@ -853,12 +870,20 @@ async function submitReq() {
   }
 }
 
-function goto(r) {
+function goto(r, push = true) {
   role = r;
   view = 'form';
   step = 1;
   if (r !== 'track') found = null;
   window.scrollTo(0, 0);
+  if (push) {
+    const targetUrl = r === 'hod' ? '/hod' : (r === 'home' ? '/' : `/#${r}`);
+    try {
+      if (window.location.pathname !== targetUrl && window.location.hash !== `#${r}`) {
+        history.pushState({ role: r }, '', targetUrl);
+      }
+    } catch (e) {}
+  }
   updateTabs();
   if (r === 'my-requests') loadMyRequests();
   if (r === 'hod' || r === 'reviewer') {
@@ -869,6 +894,16 @@ function goto(r) {
   }
   render();
 }
+
+window.addEventListener('popstate', () => {
+  const r = detectRoleFromUrl();
+  if (r !== role) goto(r, false);
+});
+
+window.addEventListener('hashchange', () => {
+  const r = detectRoleFromUrl();
+  if (r !== role) goto(r, false);
+});
 
 function render() {
   updateAcctHeader();

@@ -1,6 +1,10 @@
 {
   "version": 2,
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/hod", "destination": "/index.html" },
+    { "source": "/hod/", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
