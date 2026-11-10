@@ -19,6 +19,7 @@ import {
   query,
   where,
   getDocs,
+  onSnapshot,
   updateDoc,
   serverTimestamp,
   orderBy,
@@ -291,6 +292,29 @@ export async function fetchPendingRequestsForReviewer() {
     });
   });
   return list;
+}
+
+export function subscribeAuthorityRequests(callback, onError) {
+  const q = query(
+    collection(db, "verification_requests"),
+    limit(100)
+  );
+  return onSnapshot(q, snap => {
+    const list = [];
+    snap.forEach(d => {
+      const data = d.data();
+      list.push({
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+        decidedAt: data.decidedAt?.toDate ? data.decidedAt.toDate().toISOString() : data.decidedAt
+      });
+    });
+    list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    callback(list);
+  }, err => {
+    console.error("Authority requests snapshot error:", err);
+    if (onError) onError(err);
+  });
 }
 
 export async function fetchAllRequestsForAuthority() {

@@ -15,6 +15,7 @@ import {
   fetchRequestStatus,
   fetchUserRequests,
   fetchAllRequestsForAuthority,
+  subscribeAuthorityRequests,
   reviewRequest
 } from './firebase.js';
 
@@ -68,6 +69,7 @@ let allAuthorityRequests = [];
 let hodFilterBranch = 'ALL';
 let hodFilterStatus = 'ALL';
 let hodSearchQuery = '';
+let authorityUnsub = null;
 let authMode = 'signin'; // 'signin' | 'signup' | 'forgot' | 'verify'
 let lastRegisteredEmail = '';
 let fromNexora = /[?&]src=nexora/.test(location.search);
@@ -84,7 +86,7 @@ subscribeAuth((user, profile) => {
   updateAcctHeader();
   updateTabs();
   if (role === 'my-requests') loadMyRequests();
-  if (role === 'hod' || role === 'reviewer') loadAuthorityRequests();
+  if (role === 'hod' || role === 'reviewer') startAuthorityListener();
   render();
 });
 
@@ -535,6 +537,25 @@ async function loadMyRequests() {
   }
 }
 
+function startAuthorityListener() {
+  if (authorityUnsub) { authorityUnsub(); authorityUnsub = null; }
+  const isAuth = currentUser && (isBvcEmail(currentUser.email) || ['hod', 'principal', 'placement', 'reviewer'].includes(userProfile?.role));
+  if (!isAuth) return;
+  busy = true;
+  render();
+  authorityUnsub = subscribeAuthorityRequests(
+    list => {
+      allAuthorityRequests = list;
+      busy = false;
+      render();
+    },
+    err => {
+      console.warn("Authority live listener falling back to single fetch:", err);
+      loadAuthorityRequests();
+    }
+  );
+}
+
 async function loadAuthorityRequests() {
   busy = true;
   render();
@@ -616,7 +637,12 @@ function goto(r) {
   window.scrollTo(0, 0);
   updateTabs();
   if (r === 'my-requests') loadMyRequests();
-  if (r === 'hod' || r === 'reviewer') loadAuthorityRequests();
+  if (r === 'hod' || r === 'reviewer') {
+    startAuthorityListener();
+  } else if (authorityUnsub) {
+    authorityUnsub();
+    authorityUnsub = null;
+  }
   render();
 }
 
@@ -698,6 +724,7 @@ function bind() {
     }
 
     if (act === 'signout') {
+      if (authorityUnsub) { authorityUnsub(); authorityUnsub = null; }
       await signOutUser();
       goto('home');
       return;
